@@ -1,17 +1,26 @@
 const fs = require("fs");
-var https = require("https");
-const array = require("./array.js");
+const https = require("https");
+const events = require("./array.js");
 
 /**
- * This script extracts images from the EDM train website by using
- * the events array and downloading each file.  The pattern used by EDMtrains is the artists
+ * This script extracts images from the EDM train S3 bucked by using
+ * the events array and downloading each file.
+ *
+ * The pattern used by EDMtrains is the artists
  * name with special characters.
  *
  * Todo:
  * - make API call to EDM Train, instead of having a manual array file
- * - set timeout between each download so that it doesn't do it all at once
- * - add if image is not available to skip it (500 error)
+ * - sort array alphabetically
+ * - keep track of success and errored files and log out at the end of process
+ * - keep track of success so that you don't run them again
+ * - keep track of errors and save so that you can rerun at some point
  */
+
+// func to remove duplicate items from an array
+const removeDuplicates = (array) => {
+  return array.filter((a, b) => array.indexOf(a) === b);
+};
 
 // func to Replace characters in artist name string
 const stringCleanup = (string) => {
@@ -22,17 +31,16 @@ const stringCleanup = (string) => {
     .join("%29")
     .split("'")
     .join("&#39")
-    .split("&")
-    .join("&#38")
     .split("/")
     .join("&#47")
     .split(" ")
     .join("%20");
+
   return cleanString;
 };
 
-// func to extract artists names from events Array
-const getArtists = () => {
+// func to extract all artists names from events Array
+const getArtists = (array) => {
   const allArtists = [];
 
   array.map((event) => {
@@ -44,20 +52,26 @@ const getArtists = () => {
       });
   });
 
-  return allArtists;
+  const cleanArtists = removeDuplicates(allArtists);
+
+  return cleanArtists;
 };
 
-const artists = getArtists();
-
-// func tp download files
-var downloadFile = function (url, dest) {
-  var file = fs.createWriteStream(dest);
+// func to download files
+const downloadFile = function (url, fileName, index) {
   https.get(url, function (response) {
-    response.pipe(file);
-    file.on("finish", function () {
-      file.close();
-      console.log("Downloaded:", dest);
-    });
+    if (response.statusCode === 200) {
+      const file = fs.createWriteStream(`images/${fileName}`);
+      response.pipe(file);
+      file.on("finish", function () {
+        file.close();
+        console.info(`#${index} Success:`, fileName);
+      });
+    }
+
+    if (response.statusCode === 403 || response.statusCode === 500) {
+      console.info(`#${index} Error:`, fileName);
+    }
   });
 };
 
@@ -65,11 +79,19 @@ var downloadFile = function (url, dest) {
 const getAllFiles = (array) => {
   const url = "https://d2po6uops3e7id.cloudfront.net/img/artist/"; // EDM TRAIN IMAGE Hosting URL
 
-  array.map((item) => {
-    let fullURL = `${url}${item}.jpg`;
-    let fileName = `${item}.jpg`;
-    downloadFile(fullURL, fileName);
-  });
+  for (let i = 0; i < array.length; i++) {
+    setTimeout(() => {
+      const item = array[i];
+      const fullURL = `${url}${item}.jpg`;
+      const fileName = `${item}.jpg`;
+
+      downloadFile(fullURL, fileName, i);
+    }, i * 1000);
+  }
 };
+
+// Call the functions to run the app
+
+const artists = getArtists(events);
 
 getAllFiles(artists);
